@@ -1,0 +1,5 @@
+(((((((S.galapagense:60000.0,S.cheesmaniae:60000.0):140000.0,(S.pim1269:100000.0,S.pim1589:100000):100000):1500000.0,(S.neorickii:600000.0,S.arcanum:600000.0):1100000.0):400000.0,(((S.huaylasense:1400000.0,S.peruvianum:1400000.0,S.corneliomulleri:1400000.0):300000.0):1.0,S.chilense:1700000.0):400000.0):300000.0,(S.habrochaites:2000000.0,(S.pen3778:700000.0,S.pen0716:700000):1300000):400000.0):5600000.0):1.0,S.tuberosum:8000000.0);
+# downloaded from https://github.com/mhibbins/genetreepruningalg/blob/e2627a711e088844f19c680262e05c433ac81a45/analyses/tomato_analysis/make_tomato_test_input_files.py#L13
+# copy-pasted from line 13 in this python script
+# based on Hibbins et al. 2023, branch lengths are in years
+# 1 generation every 2 years, N=100_000 diploids

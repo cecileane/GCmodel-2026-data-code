@@ -1,0 +1,525 @@
+---
+title: "create figures from simulations"
+date: last-modified
+---
+
+# accuracy to estimate the GC model parameters
+
+```{r}
+#| label: setup
+#| echo: false
+library(tidyverse)
+# setwd("simulations")
+columnwidth <- 3 # in inches # 1 point / 72 = 1 inch
+```
+
+```{r}
+# spec_csv("accuracy_GC_results.csv")
+res <- read_csv("accuracy_GC_results.csv", col_types = list(
+  topo   = col_character(),
+  netT   = col_double(),
+  kernel = col_character(),
+  lambda = col_double(),
+  lmodel = col_character(),
+  rep    = col_integer(),
+  lambda_hat = col_double(),
+  mu_hat = col_double(),
+  s2_hat = col_double(),
+  v0_hat = col_double(),
+  s2_within = col_double(),
+  loglik = col_double(),
+  aic    = col_double(),
+  lrt_pval = col_double(),
+  t3_m  = col_double(), t3_v = col_double(),
+  t4_m  = col_double(), t4_v = col_double(),
+  t6_m  = col_double(), t6_v = col_double(),
+  t9_m  = col_double(), t9_v = col_double(),
+  t12_m = col_double(),t12_v = col_double(),
+  t13_m = col_double(),t13_v = col_double()
+))
+res <- res |>
+  mutate(LRT = factor(
+    ifelse(lmodel=="BMw", "BM",
+    ifelse(lmodel=="fix1", "fixed λ=1",
+    ifelse(lmodel=="true", "true λ",
+    ifelse(lrt_pval<0.05, "reject λ=1", "λ=1 fits")))),
+    levels=c("reject λ=1","λ=1 fits","fixed λ=1","true λ","BM"))) |>
+  mutate(
+    lambda_okay = ifelse(lmodel!="estim", TRUE,
+      ifelse(lambda==0 & lambda_hat<1e-99, TRUE, # log10(lambda_hat/1e-100) <= 1
+      ifelse(abs(log10(lambda_hat/lambda)) <=1, TRUE, FALSE))),
+    T = netT,
+    netT = factor(netT, levels=c(10,1)),
+    lambda_hat_cat = cut(res$lambda_hat,
+      breaks=c(-Inf,10^c(-99,-2,-1,-0.5,-0.01,0.01,0.5,1,1.5,2,6))))
+```
+```{r}
+res <- res |>
+  mutate(
+    eV = # expected Variance within, averaged across the 17 pops
+      case_when( # for a tree: use equation for H_u
+        topo=="tre" ~ exp(-T) * lambda + (1-exp(-T)),
+        # for a network: values calculated in accuracy_GC_simulate.jl
+        topo=="net" & T== 1 & lambda== 0 ~ 0.6410849191067046,
+        topo=="net" & T== 1 & lambda==.5 ~ 0.8322268597952748,
+        topo=="net" & T== 1 & lambda== 1 ~ 1.0233688004838453,
+        topo=="net" & T== 1 & lambda== 2 ~ 1.405652681860986,
+        topo=="net" & T==10 & lambda== 0 ~ 1.0688460659442562,
+        topo=="net" & T==10 & lambda==.5 ~ 1.0691905071381087,
+        topo=="net" & T==10 & lambda== 1 ~ 1.0695349483319614,
+        topo=="net" & T==10 & lambda== 2 ~ 1.0702238307196663,
+      )
+    )
+```
+
+```{r}
+T_labeller = function(x){paste0("T=",x,": ",ifelse(x==1, "high","low")," ILS")}
+lmodel_labeller = function(x){
+  ifelse(x=="BMw", "BM + σ² within",
+  ifelse(x=="fix1", "λ fixed at 1",
+  ifelse(x=="estim","λ estimated","λ fixed at true value")))}
+kernel_labeller = function(x){
+  ifelse(x=="normal", "Brownian motion", "mutational Poisson-Laplace")}
+model_labeller = function(x){
+  ifelse(x=="BM", "BM + σ² within",
+  ifelse(x=="GC1", "GC, λ fixed at 1", "GC, λ estimated"))
+}
+```
+
+Simulations were done on the 17-taxon network and repeated on its major tree,
+with traits simulated either under a mutational Poisson-Laplace model
+or a Brownian motion (along each gene tree). The results are very similar,
+so we restrict the results to the network (with reticulation) and mutational
+model only, to present in the manuscript, for simplicity.
+
+```{r}
+#| label: "filter results to network & mutational model"
+res_nm <- filter(res, topo=="net" & kernel=="mutational")
+```
+
+evolutionary rate σ² is well estimated under low ILS and GC model:
+
+```{r}
+p <- ggplot(res_nm,
+  aes(y=s2_hat, x=as.factor(lambda))) +
+  geom_hline(yintercept=1) + # 1 = true σ²
+  geom_boxplot(outliers=FALSE) +
+  geom_jitter(aes(color=lambda_hat_cat), width=.3, size=.1, stroke = 0) +
+  # scale_color_grey(start=0.6, end=0) +
+  scale_color_brewer(palette="Spectral", direction=-1) +
+  facet_grid(netT ~ lmodel, scales = "free_y",
+    labeller = labeller(netT=T_labeller, lmodel=lmodel_labeller)) +
+  xlab("true λ") + ylab("estimated σ²") +
+  scale_y_sqrt() +
+  theme_bw() +
+  theme(legend.position="none",
+        text=element_text(size=unit(9, 'pt')),)
+p
+```
+
+```{r}
+ggsave("accuracy_GC_sigma2.pdf", p,
+  device = cairo_pdf, 
+  width = 2*columnwidth, height = 1.2*columnwidth, unit = "in")
+```
+
+
+```{r}
+p <- ggplot(res_nm,
+  aes(y=mu_hat, x=as.factor(lambda))) +
+  geom_hline(yintercept=0) + # 0 = true population mean at the root
+  geom_boxplot(outliers=FALSE) +
+  geom_jitter(color=grey(.8), width=.3, size=.1, stroke=0) +
+  scale_y_continuous(minor_breaks=seq(-5,5,by=1)) +
+  facet_grid(netT ~ lmodel,
+    labeller = labeller(netT=T_labeller, lmodel=lmodel_labeller)) +
+  xlab("true λ") + ylab("estimated m₀") +
+  theme_bw() +
+  theme(legend.position="none", text=element_text(size=unit(9,'pt')))
+p
+```
+
+```{r}
+ggsave("accuracy_GC_mu.pdf", p,
+    device = cairo_pdf,
+    width = 2*columnwidth, height = 1.2*columnwidth, unit="in")
+```
+
+
+The estimation of λ is quite poor:
+
+using data from both kernels (mutational and BM), we see a
+very slightly better estimation of λ from BM traits:
+
+```{r}
+p <- ggplot(
+    filter(res, topo=="net" & lmodel=="estim"),
+    aes(y=lambda_hat, x=as.factor(lambda))) +
+  geom_boxplot(outliers=FALSE) +
+  scale_y_continuous(transform="log1p", minor_breaks=NULL,
+    breaks=c(0,0.1,0.5,1,2,5,10,100,200,400,600)) +
+  geom_jitter(aes(color=LRT), width=0.1, size=0.2) +
+  scale_color_manual(
+    values = c("black", "sienna1"),
+    guide = guide_legend(reverse=TRUE,
+        title="likelihood ratio test",
+        override.aes = list(size=1))) +
+  facet_grid(netT ~ kernel, labeller = labeller(
+    kernel=kernel_labeller, netT=T_labeller)) +
+  xlab("true λ") + ylab("estimated λ") +
+  theme_bw() +
+  theme(legend.position="bottom")
+p
+```
+
+```{r}
+ggsave("accuracy_GC_lambda_2kernels.pdf", p,
+    device = cairo_pdf, width=6, height=6)
+```
+
+but the effect is very slight, and not worth using space
+in the main part of the paper.
+below: figure for the mutational model only.
+
+```{r}
+lbreaks = c(0,0.5,1,2,5,10,100,200,400,600)
+p <- ggplot(filter(res_nm, lmodel=="estim"),
+    aes(y=lambda_hat, x=as.factor(lambda))) +
+  geom_boxplot(outliers=FALSE) +
+  scale_y_continuous(transform="log1p", minor_breaks=NULL,
+    breaks=lbreaks, labels=as.character(lbreaks)) +
+  geom_jitter(aes(color=LRT), width=0.1, size=0.2) +
+  scale_color_manual(
+    values = c("black", "sienna1"),
+    guide = guide_legend(reverse=TRUE,
+        title="likelihood ratio test",
+        override.aes = list(size=1))) +
+  facet_grid(~ netT, labeller = labeller(netT=T_labeller)) +
+  xlab("true λ") + ylab("estimated λ") +
+  theme_bw() +
+  theme(legend.position="bottom", text=element_text(size=unit(9,'pt')))
+p
+```
+
+```{r}
+ggsave("accuracy_GC_lambda.pdf", p,
+    device = cairo_pdf, 
+    width = 1.5*columnwidth, height = 0.9*columnwidth, unit="in")
+```
+
+Model selection with AIC:
+including the BM with intra-specific variation, but
+excluding the GC model with the true λ because
+we never know the true λ in practice (and when λ=1,
+the CG model with the true λ and λ fixed to 1 are the same).
+
+```{r}
+aic_df <- res |>
+  select(topo, netT, kernel, lambda, rep, lmodel, aic) |>
+  pivot_wider(names_from="lmodel", values_from="aic") |>
+  mutate(
+  bestmodel = case_when(
+      fix1 <= estim & fix1 <= BMw ~ "fix1",
+      BMw <= estim ~ "BMw",
+      TRUE ~ "estim" )) |> mutate(
+  min_aic = case_when(
+      bestmodel == "fix1" ~ fix1,
+      bestmodel == "estim" ~ estim,
+      bestmodel == "BMw" ~ BMw )) |> mutate(
+  delta_fix1  = fix1  - min_aic,
+  delta_estim = estim - min_aic,
+  delta_BMw   = BMw   - min_aic)
+mean(aic_df$delta_fix1 == 0)     # 0.7809375
+mean(aic_df$bestmodel == "fix1") # same
+# mean(aic_df$bestmodel == "true") # 0.57 when included
+mean(aic_df$bestmodel == "BMw") # 0.1809375
+# 0.14625 when 'true' was included
+mean(aic_df$BMw < aic_df$fix1) # 0.1859375
+```
+
+```{r}
+aic_res <- aic_df |> filter(topo=="net" & kernel=="mutational") |>
+  group_by(netT,lambda) |>
+  summarize(
+    n_tot = n(),
+    n_GC1 = sum(bestmodel=="fix1"),
+    n_BM = sum(bestmodel=="BMw"),
+    n_GCestim = sum(bestmodel=="estim"),
+    .groups = "drop"
+  )
+aic_res_long <- aic_res |> select(!n_tot) |>
+  pivot_longer(!c("netT","lambda"), values_to="n",
+  names_to="model", names_prefix="n_") |>
+  mutate(model = factor(model, levels=c("BM","GCestim","GC1")))
+aic_res
+```
+
+  netT  lambda n_tot n_GC1  n_BM n_GCestim
+  10       0     100    82    17         1
+  10       0.5   100    81    16         3
+  10       1     100    85     7         8
+  10       2     100    76    19         5
+  1        0     100    73    26         1
+  1        0.5   100    69    28         3
+  1        1     100    85    12         3
+  1        2     100    81    13         6
+
+```{r}
+p <- ggplot(aic_res_long,
+  aes(x=as.factor(lambda), y=n, fill=model)) +
+  geom_bar(stat="identity") +
+  scale_y_continuous(limits=c(0,100), expand=0) +
+  scale_fill_manual(
+    values = c("sienna4", "burlywood3", "burlywood1"),
+    name = "model favored by AIC:",
+    labels=c("BM + σ² within", "GC, λ estimated", "GC, λ fixed at 1")) +
+  facet_grid(~ netT, labeller = labeller(netT=T_labeller)) +
+  xlab("true λ") +
+  ylab("frequency favored by AIC") +
+  theme_bw() +
+  theme(text=element_text(size=unit(9, 'pt')))
+p
+```
+
+```{r}
+ggsave("accuracy_GC_aic.pdf", p,
+      device = cairo_pdf, 
+      width = 1.6*columnwidth, height = 0.8*columnwidth, unit = "in")
+```
+
+λ=1 is almost never rejected:
+```{r}
+res |> filter(lmodel=="estim") |>
+  group_by(lambda, netT) |>
+  summarize(
+    nreject=sum(LRT=="reject λ=1"),
+    naccept=sum(LRT=="λ=1 fits"),
+    ntotal=n()) |>
+  mutate(power = nreject/ntotal) |> print(n=32)
+```
+
+    λ   T    nreject naccept ntotal  power
+    0   10         2     398    400 0.005 
+    0   1          0     400    400 0     
+    0.5 10         2     398    400 0.005 
+    0.5 1          3     397    400 0.0075
+    1   10        13     387    400 0.0325
+    1   1          3     397    400 0.0075
+    2   10         8     392    400 0.02  
+    2   1          9     391    400 0.0225
+
+restricted to the network, mutational kernel:
+```{r}
+res_nm |> filter(lmodel=="estim") |>
+  # group_by(lambda, netT, topo, kernel) |>
+  group_by(netT) |>
+  summarize(
+    nreject=sum(LRT=="reject λ=1"),
+    naccept=sum(LRT=="λ=1 fits"),
+    ntotal=n()) |>
+  mutate(power = nreject/ntotal) |> print(n=32)
+```
+
+    netT  nreject naccept ntotal  power
+    10          8     392    400 0.02  
+    1           1     399    400 0.0025
+
+"λ=1" is rejected only 9/800 = 1.125% of the time overall
+
+correlation between λ and σ² when λ is estimated:
+I would have expected the estimates of
+v0 and σ² to be correlated, but they are not particularly when T=10:
+
+```{r}
+p <- ggplot(filter(res_nm, lmodel=="estim"),
+    aes(y=lambda_hat, x=s2_hat, color=as.factor(lambda))) +
+  scale_y_continuous(transform="log1p", minor_breaks=NULL,
+    breaks=c(0,0.5,1,2,5,10,100,200,400,600)) +
+  geom_point(size=0.2) +
+  scale_color_manual(
+    values = c("grey", "black", "sienna1", "sienna4"),
+    guide = guide_legend(title="true λ",
+        override.aes = list(size=1))) +
+  facet_grid( ~ netT,
+    labeller = labeller(netT=T_labeller)) +
+  xlab("estimated σ²") + ylab("estimated λ") +
+  theme_bw() +
+  theme(legend.position="bottom")
+p
+```
+```{r}
+ggsave("accuracy_GC_lambda_sigma2.pdf", p,
+    device = cairo_pdf, width=6, height=4)
+```
+
+
+Sanity checks: under GC `v0_hat = lambda_hat * s2_hat` and
+if the phylogeny is a tree then `s2_within` matches the formula for Hu.
+
+```{r}
+#| eval: false
+subset(res, lmodel == "estim") |> # aligned: good
+  ggplot(aes(y=v0_hat, x = lambda_hat * s2_hat)) + geom_point()
+subset(res, lmodel!="BMw" & topo=="tre") |> # aligned: good
+  ggplot(aes(y=s2_within, x=exp(-T)*v0_hat + (1-exp(-T))*s2_hat)) + geom_point()
+```
+
+
+v0 = λσ² is estimated better under high ILS than low ILS:
+```{r}
+p <- ggplot(subset(res_nm, lmodel!="BMw"),
+    aes(y=v0_hat, x=as.factor(lambda))) +
+  geom_boxplot(outliers=FALSE) +
+  geom_jitter(aes(color=lambda_hat_cat), width=.3, size=.1, stroke = 0) +
+  scale_y_continuous(
+    transform="log1p", minor_breaks=NULL,
+    breaks=c(0,0.1,0.5,1,2,5,10,100,200,400,600)) +
+  scale_color_brewer(palette="Spectral", direction=-1,
+    guide = NULL,
+    ) +
+  facet_grid(netT ~ lmodel, scales = "free_y",
+    labeller = labeller(netT=T_labeller, lmodel=lmodel_labeller)) +
+  xlab("true λ") + ylab("estimated v0 = σ²λ (true=λ)") +
+  theme_bw() +
+  theme(legend.position="bottom",
+    legend.margin=margin(-10,0,0,0),
+    text=element_text(size=unit(9, 'pt')))
+p
+```
+
+```{r}
+ggsave("accuracy_GC_v0.pdf", p,
+    device = cairo_pdf,
+    width = 2*columnwidth, height = 1.2*columnwidth, unit = "in")
+```
+
+
+The within-species variance (a weighted average of v0 and σ² under a tree)
+is close to v0 under high ILS and to σ² under low ILS, roughly.
+
+It is well estimated under low ILS:
+
+```{r}
+eVs <- res |> group_by(topo, netT, lambda) |>
+  summarize(eV = first(eV), .groups="drop")
+```
+
+```{r}
+p <- ggplot(subset(res, netT=="10"),
+  aes(y=s2_within/eV, x=as.factor(lambda))) +
+  geom_boxplot(outliers=FALSE) +
+  geom_jitter(aes(color=lambda_hat_cat), width=.3, size=.2) +
+  scale_color_brewer(palette="Spectral", direction=-1,
+    guide = NULL,
+    ) +
+  facet_grid(kernel ~ lmodel,
+    labeller = labeller(kernel=kernel_labeller, lmodel=lmodel_labeller)) +
+  xlab("true λ") + ylab("ratio: fitted/true expected within-population variance") +
+  theme_bw() +
+  theme(legend.position="bottom",
+    legend.margin=margin(-10,0,0,0))
+p
+```
+```{r}
+ggsave("accuracy_GC_eV_2kernels_T10.pdf", p,
+    device = cairo_pdf, width=8, height=6)
+```
+
+It is also well estimated under high ILS regardless of the method
+(e.g. even if λ is estimated), and without visible bias:
+
+```{r}
+p <- ggplot(subset(res, netT=="1"),
+  aes(y=s2_within/eV, x=as.factor(lambda))) +
+  geom_boxplot(outliers=FALSE) +
+  geom_jitter(aes(color=lambda_hat_cat), width=.3, size=.2) +
+  scale_color_brewer(palette="Spectral", direction=-1,
+    guide = NULL,
+    ) +
+  facet_grid(kernel ~ lmodel,
+    labeller = labeller(kernel=kernel_labeller, lmodel=lmodel_labeller)) +
+  xlab("true λ") + ylab("ratio: fitted/true expected within-population variance") +
+  theme_bw() +
+  theme(legend.position="bottom",
+    legend.margin=margin(-10,0,0,0))
+p
+```
+```{r}
+ggsave("accuracy_GC_eV_2kernels_T1.pdf", p,
+    device = cairo_pdf, width=8, height=6)
+```
+
+for the paper, focus on the network with mutational model,
+showing both low & high ILS:
+
+```{r}
+p <- ggplot(res_nm,
+  aes(y=s2_within/eV, x=as.factor(lambda))) +
+  geom_boxplot(outliers=FALSE) +
+  geom_jitter(aes(color=lambda_hat_cat), width=.3, size=.1, stroke = 0) +
+  scale_color_brewer(palette="Spectral", direction=-1,
+    guide = NULL) +
+  facet_grid(netT ~ lmodel,
+    labeller = labeller(netT=T_labeller, lmodel=lmodel_labeller)) +
+  xlab("true λ") + ylab("ratio: fitted/true expected within-population variance") +
+  theme_bw() +
+  theme(legend.position="bottom",
+    legend.margin=margin(-10,0,0,0),
+    text=element_text(size=unit(9, 'pt')))
+p
+```
+```{r}
+ggsave("accuracy_GC_eV.pdf", p,
+    device = cairo_pdf, 
+    width = 2*columnwidth, height = 1.2*columnwidth, unit = "in")
+```
+
+```{r}
+res_nm |> mutate(s2_within_ratio = s2_within/eV) |>
+  summarize(m = mean(s2_within_ratio), s = sd(s2_within_ratio))
+```
+
+unbiased: m = 1.001922, s=0.0917733
+SE: 0.0917733/sqrt(3200) = 0.001622338
+
+Out of curiosity: look at the simulated mean & variance
+within some of the populations.
+t3 and t4 are not below *any* reticulation.
+t6, t9, t12, t13 are each below 1 reticulation,
+the most recent reticulation being that above t9.
+
+```{r}
+res |> filter(!is.na(t3_m)) |>
+  group_by(topo, netT, lambda) |>
+  summarize(
+    eV = first(eV),
+    t3_mV = mean(t3_v),
+    t4_mV = mean(t4_v),
+    t6_mV = mean(t6_v),
+    t9_mV = mean(t9_v),
+    t12_mV = mean(t12_v),
+    t13_mV = mean(t13_v),
+    #t3_vM = var( t3_m),
+    #t4_vM = var( t4_m),
+    #t6_vM = var( t6_m),
+    #t9_vM = var( t9_m),
+    )
+```
+
+    topo   T  λ     eV  t3_mV t4_mV t6_mV t9_mV t12_mV t13_mV
+    net   10  0   1.07  1.04  1.03  0.995 2.07  0.994  0.984
+    net   10  0.5 1.07  0.986 0.978 0.967 2.14  0.993  1.06 
+    net   10  1   1.07  1.02  1.01  1.01  2.19  1.03   1.01 
+    net   10  2   1.07  0.999 1.02  1.03  2.10  1.01   1.02 
+    net   1   0   0.641 0.627 0.642 0.653 0.716 0.657  0.629
+    net   1   0.5 0.832 0.812 0.834 0.857 0.959 0.859  0.833
+    net   1   1   1.02  1.03  0.991 1.06  1.25  1.06   1.09 
+    net   1   2   1.41  1.36  1.38  1.42  1.70  1.45   1.54 
+    tre   10  0   1.000 0.996 0.997 1.00  0.972 0.998  0.986
+    tre   10  0.5 1.000 1.01  1.04  1.00  0.976 1.01   0.963
+    tre   10  1   1     1.00  1.03  0.982 0.978 1.01   0.956
+    tre   10  2   1.00  0.968 1.05  0.946 0.988 1.00   1.01 
+    tre   1   0   0.632 0.651 0.625 0.640 0.639 0.638  0.639
+    tre   1   0.5 0.816 0.814 0.826 0.865 0.815 0.804  0.832
+    tre   1   1   1     1.000 1.01  0.957 1.00  0.997  0.996
+    tre   1   2   1.37  1.34  1.33  1.37  1.41  1.33   1.33
