@@ -1,0 +1,404 @@
+---
+title: "create figures from simulations on the tomato tree"
+date: last-modified
+---
+
+# accuracy of Gaussian with ILS: tomato tree
+
+many loci: so the joint Gaussian assumption should be a good approximation.
+
+```{r}
+#| label: setup
+#| echo: false
+library(tidyverse)
+setwd("simulations")
+columnwidth <- 3 # in inches # 1 point / 72 = 1 inch
+```
+
+```{r}
+# spec_csv("accuracy_GC_results.csv")
+res <- read_csv("accuracy_GC_results_tomato.csv", col_types = list(
+  topo   = col_character(),
+  netT   = col_double(),
+  kernel = col_character(),
+  lambda = col_double(),
+  lmodel = col_character(),
+  rep    = col_integer(),
+  lambda_hat = col_double(),
+  mu_hat = col_double(),
+  s2_hat = col_double(),
+  v0_hat = col_double(),
+  s2_within = col_double(),
+  loglik = col_double(),
+  aic    = col_double(),
+  lrt_pval = col_double(), # default has trouble with this!
+  t3_m  = col_double(), t3_v = col_double(),
+  t4_m  = col_double(), t4_v = col_double(),
+  t6_m  = col_double(), t6_v = col_double(),
+  t9_m  = col_double(), t9_v = col_double(),
+  t12_m = col_double(),t12_v = col_double(),
+  t13_m = col_double(),t13_v = col_double()
+))
+res <- res |>
+  mutate(LRT = factor(
+    ifelse(lmodel=="BMw", "BM",
+    ifelse(lmodel=="fix1", "fixed λ=1",
+    ifelse(lmodel=="true", "true λ",
+    ifelse(lrt_pval<0.05, "reject λ=1", "λ=1 fits")))),
+    levels=c("reject λ=1","λ=1 fits","fixed λ=1","true λ","BM"))) |>
+  mutate(
+    lambda_okay = ifelse(lmodel!="estim", TRUE,
+      ifelse(lambda==0 & lambda_hat<1e-99, TRUE, # log10(lambda_hat/1e-100) <= 1
+      ifelse(abs(log10(lambda_hat/lambda)) <=1, TRUE, FALSE))),
+    T = netT,
+    netT = factor(netT, levels=c(6,1)),
+    lambda_hat_cat = cut(res$lambda_hat,
+      breaks=c(-Inf,10^c(-99,-2,-1,-0.5,-0.01,0.01,0.5,1,1.5,2,6))))
+```
+```{r}
+res <- res |>
+  mutate(
+    eV = # expected Variance within, averaged across the 17 pops
+      case_when( # for a tree: use equation for H_u
+        topo=="tre" ~ exp(-T) * lambda + (1-exp(-T)),
+      )
+    )
+```
+
+```{r}
+T_labeller = function(x){paste0("T=",x,": ",ifelse(x==1, "high","low")," ILS")}
+param_labeller = function(x){ifelse(x=="sd_hat", "estimated σ", "estimated m₀")}
+lmodel_labeller = function(x){
+  ifelse(x=="BMw", "BM + σ² within",
+  ifelse(x=="fix1", "λ fixed at 1",
+  ifelse(x=="estim","λ estimated","λ fixed at true value")))}
+kernel_labeller = function(x){
+  ifelse(x=="normal", "Brownian motion", "mutational Poisson-Laplace")}
+model_labeller = function(x){
+  ifelse(x=="BM", "BM + σ² within",
+  ifelse(x=="GC1", "GC, λ fixed at 1", "GC, λ estimated"))
+}
+```
+
+Simulations were done on the 12-taxon tomato tree,
+with traits simulated either a mutational Poisson-Laplace model. 
+
+```{r}
+#| label: "filter results to network & mutational model"
+res_tm <- filter(res, topo=="tre" & kernel=="mutational")
+```
+
+evolutionary rate σ² is well estimated under low ILS (empirical tree) and GC model:
+
+```{r}
+p <- ggplot(res_tm,
+  aes(y=s2_hat, x=as.factor(lambda))) +
+  geom_hline(yintercept=1) + # 1 = true σ²
+  geom_boxplot(outliers=FALSE) +
+  geom_jitter(aes(color=lambda_hat_cat), width=.3, size=.1, stroke = 0) +
+  # scale_color_grey(start=0.6, end=0) +
+  scale_color_brewer(palette="Spectral", direction=-1) +
+  facet_grid(netT ~ lmodel, scales = "free_y",
+    labeller = labeller(netT=T_labeller, lmodel=lmodel_labeller)) +
+  xlab("true λ") + ylab("estimated σ²") +
+  scale_y_sqrt() +
+  theme_bw() +
+  theme(legend.position="none",
+        text=element_text(size=unit(9, 'pt')),)
+p
+```
+
+```{r}
+ggsave("accuracy_GC_sigma2_tomato_1_6.pdf", p,
+  device = cairo_pdf, 
+  width = 2*columnwidth, height = 1.2*columnwidth, unit = "in")
+```
+
+plot with empirical tree only (total heigh 6 coal. units):
+```{r}
+p <- ggplot(subset(res_tm, netT == 6),
+  aes(y=s2_hat, x=as.factor(lambda))) +
+  geom_hline(yintercept=1) + # 1 = true σ²
+  geom_boxplot(outliers=FALSE) +
+  geom_jitter(aes(color=lambda_hat_cat), width=.3, size=.1, stroke = 0) +
+  # scale_color_grey(start=0.6, end=0) +
+  scale_color_brewer(palette="Spectral", direction=-1) +
+  facet_grid(. ~ lmodel, scales = "free_y",
+    labeller = labeller(netT=T_labeller, lmodel=lmodel_labeller)) +
+  xlab("true λ") + ylab("estimated σ²") +
+  scale_y_sqrt() +
+  theme_bw() +
+  theme(legend.position="none",
+        text=element_text(size=unit(9, 'pt')),)
+p
+```
+
+```{r}
+ggsave("accuracy_GC_sigma2_tomato.pdf", p,
+  device = cairo_pdf, 
+  width = 2*columnwidth, height = 0.7*columnwidth, unit = "in")
+```
+
+numerical values for the bias, precision and accuracy in estimating σ
+(note: square-root of σ², true is 1):
+
+```{r}
+s2_hat_summary <- res_tm |>
+  mutate(s_hat = sqrt(s2_hat)) |>
+  group_by(netT, lmodel, lambda) |>
+  summarize(
+    bias = mean(s_hat)-1,
+    stde = sqrt(mean((s_hat - mean(s_hat))^2)),
+    rmse = sqrt(mean((s_hat-1)^2)),
+    .groups = "drop_last"
+  )
+# with(s2_hat_summary, max((bias^2 + stde^2)/rmse^2 -1)) # 4.440892e-16
+write_csv(s2_hat_summary, "accuracy_GC_results_s2summary_tomato.csv")
+s2_hat_summary |> summarize(
+  bias = mean(abs(bias)),
+  stde = mean(stde),
+  rmse = mean(rmse),
+  .groups = "drop"
+)
+```
+
+  netT  lmodel    bias  stde  rmse
+1 6     BMw    0.0456  0.265 0.269
+2 6     estim  0.0284  0.124 0.127
+3 6     fix1   0.0164  0.118 0.120
+4 6     true   0.0107  0.118 0.119
+5 1     BMw    0.237   0.369 0.461
+6 1     estim  0.114   0.432 0.449
+7 1     fix1   0.131   0.121 0.192
+8 1     true   0.00657 0.124 0.124
+
+Ancestral mean is well estimated:
+
+```{r}
+p <- ggplot(res_tm,
+  aes(y=mu_hat, x=as.factor(lambda))) +
+  geom_hline(yintercept=0) + # 0 = true population mean at the root
+  geom_boxplot(outliers=FALSE) +
+  geom_jitter(color=grey(.8), width=.3, size=.1, stroke=0) + # width=0.1, size=0.2
+  scale_y_continuous(minor_breaks=seq(-5,5,by=1)) +
+  facet_grid(netT ~ lmodel,
+    labeller = labeller(netT=T_labeller, lmodel=lmodel_labeller)) +
+  xlab("true λ") + ylab("estimated m₀") +
+  theme_bw() +
+  theme(legend.position="none", text=element_text(size=unit(9,'pt')))
+p
+```
+
+```{r}
+ggsave("accuracy_GC_mu_tomato.pdf", p,
+    device = cairo_pdf,
+    width = 2*columnwidth, height = 1.2*columnwidth, unit="in")
+```
+
+
+The estimation of λ is quite poor:
+
+```{r}
+lbreaks = c(0,0.5,1,2,5,10,100,200,400,600)
+p <- ggplot(filter(res_tm, lmodel=="estim" & netT==6),
+    aes(y=lambda_hat, x=as.factor(lambda))) +
+  geom_boxplot(outliers=FALSE) +
+  scale_y_continuous(transform="log1p", minor_breaks=NULL,
+    breaks=lbreaks, labels=as.character(lbreaks)) +
+  geom_jitter(aes(color=LRT), width=0.1, size=0.2) +
+  scale_color_manual(
+    values = c("black", "sienna1"),
+    guide = guide_legend(reverse=TRUE,
+        title="likelihood ratio test",
+        override.aes = list(size=1))) +
+  facet_grid(~ netT, labeller = labeller(netT=T_labeller)) +
+  xlab("true λ") + ylab("estimated λ") +
+  theme_bw() +
+  theme(text=element_text(size=unit(9,'pt')))
+p
+```
+
+```{r}
+ggsave("accuracy_GC_lambda_tomato.pdf", p,
+    device = cairo_pdf, 
+    width = 1.2*columnwidth, height = 0.9*columnwidth, unit="in")
+```
+
+```{r}
+res_tm |> filter(lmodel=="estim") |>
+  # group_by(lambda, netT, topo, kernel) |>
+  group_by(netT) |>
+  summarize(
+    nreject=sum(LRT=="reject λ=1"),
+    naccept=sum(LRT=="λ=1 fits"),
+    ntotal=n()) |>
+  mutate(power = nreject/ntotal) |> print(n=32)
+```
+
+    netT  nreject naccept ntotal  power
+1 6           3     397    400 0.0075
+2 1           1     399    400 0.0025
+
+"λ=1" is rejected only 3/400 = 0.75% of the time overall
+
+Plot mu and sigma2 parameters in a single graph
+
+```{r}
+res_tm1 <- subset(res_tm, netT == 6)
+res_tm1$sd_hat <- sqrt(res_tm1$s2_hat)
+res_tm1_long <- pivot_longer(res_tm1, cols = c("mu_hat", "sd_hat"), names_to = "parameter")
+res_tm1_long$true_value <- 1
+res_tm1_long[res_tm1_long$parameter == "mu_hat",]$true_value <- 0
+res_tm1_long$parameter <- factor(res_tm1_long$parameter, levels = c("sd_hat", "mu_hat"))
+```
+```{r}
+p <- ggplot(res_tm1_long,
+  aes(y=value, x=as.factor(lambda))) +
+  geom_hline(aes(yintercept=true_value)) + # 1 = true σ²
+  geom_boxplot(outliers=FALSE) +
+  geom_jitter(aes(color=lambda_hat_cat), width=.3, size=.1, stroke = 0) +
+  # scale_color_grey(start=0.6, end=0) +
+  scale_color_brewer(palette="Spectral", direction=-1) +
+  facet_grid(parameter ~ lmodel, scales = "free_y", switch = "y",
+    labeller = labeller(parameter=param_labeller, lmodel=lmodel_labeller)) +
+  xlab("true λ") +
+  theme_bw() +
+  theme(legend.position="none",
+        axis.title.y = element_blank(),
+        text=element_text(size=unit(9, 'pt')),
+        title = element_text(size = 7),
+        strip.text.y = element_text(vjust = 0),
+        strip.placement = "outside",
+        strip.background = element_blank(),
+  )
+p
+```
+
+```{r}
+ggsave("accuracy_GC_sigma2_mu_tomato.pdf", p,
+  device = cairo_pdf, 
+  width = 2*columnwidth, height = 1.2*columnwidth, unit = "in")
+```
+
+Model selection with AIC:
+including the BM with intra-specific variation, but
+excluding the GC model with the true λ because
+we never know the true λ in practice (and when λ=1,
+the CG model with the true λ and λ fixed to 1 are the same).
+
+```{r}
+aic_df <- res_tm1 |>
+  select(topo, netT, kernel, lambda, rep, lmodel, aic) |>
+  pivot_wider(names_from="lmodel", values_from="aic") |>
+  mutate(
+  bestmodel = case_when(
+      fix1 <= estim & fix1 <= BMw ~ "fix1",
+      BMw <= estim ~ "BMw",
+      TRUE ~ "estim" )) |> mutate(
+  min_aic = case_when(
+      bestmodel == "fix1" ~ fix1,
+      bestmodel == "estim" ~ estim,
+      bestmodel == "BMw" ~ BMw )) |> mutate(
+  delta_fix1  = fix1  - min_aic,
+  delta_estim = estim - min_aic,
+  delta_BMw   = BMw   - min_aic)
+mean(aic_df$delta_fix1 == 0)     # 0.7809375
+mean(aic_df$bestmodel == "fix1") # same
+# mean(aic_df$bestmodel == "true") # 0.57 when included
+mean(aic_df$bestmodel == "BMw") # 0.1809375
+# 0.14625 when 'true' was included
+mean(aic_df$BMw < aic_df$fix1) # 0.1859375
+mean(aic_df$BMw < aic_df$estim) # 0.4846875
+```
+
+```{r}
+aic_res <- aic_df |> filter(topo=="tre" & kernel=="mutational") |>
+  group_by(netT,lambda) |>
+  summarize(
+    n_tot = n(),
+    n_GC1 = sum(bestmodel=="fix1"),
+    n_BM = sum(bestmodel=="BMw"),
+    n_GCestim = sum(bestmodel=="estim"),
+    .groups = "drop"
+  )
+aic_res_long <- aic_res |> select(!n_tot) |>
+  pivot_longer(!c("netT","lambda"), values_to="n",
+  names_to="model", names_prefix="n_") |>
+  mutate(model = factor(model, levels=c("BM","GCestim","GC1")))
+aic_res
+```
+
+  netT  lambda n_tot n_GC1  n_BM n_GCestim
+1 6        0     100    78    19         3
+2 6        0.5   100    81    15         4
+3 6        1     100    81    16         3
+4 6        2     100    82    11         7
+```{r}
+colSums(aic_res[, 3:6]) / 400
+```
+
+    n_tot     n_GC1      n_BM n_GCestim 
+   1.0000    0.8050    0.1525    0.0425
+   
+```{r}
+p <- ggplot(aic_res_long,
+  aes(x=as.factor(lambda), y=n, fill=model)) +
+  geom_bar(stat="identity") +
+  scale_y_continuous(limits=c(0,100), expand=0) +
+  scale_fill_manual(
+    values = c("sienna4", "burlywood3", "burlywood1"),
+    name = "model favored by AIC:",
+    labels=c("BM + σ² within", "GC, λ estimated", "GC, λ fixed at 1")) +
+  facet_grid(~ netT, labeller = labeller(netT=T_labeller)) +
+  xlab("true λ") +
+  ylab("frequency favored by AIC") +
+  theme_bw() +
+  theme(#legend.position="bottom",
+        text=element_text(size=unit(9, 'pt')))
+p
+```
+
+```{r}
+ggsave("accuracy_GC_aic_tomato.pdf", p,
+      device = cairo_pdf, 
+      width = 1.2*columnwidth, height = 0.8*columnwidth, unit = "in")
+```
+
+Best model when comparing only BMw and lambda esitm
+```{r}
+aic_res_BMGC <- aic_df |> filter(topo=="tre" & kernel=="mutational") |>
+  group_by(netT) |>
+  summarize(
+    n_tot = n(),
+    n_BM = mean(BMw<estim),
+    n_GCestim = mean(BMw>=estim),
+    .groups = "drop"
+  )
+aic_res_BMGC
+```
+
+  netT  n_tot  n_BM n_GCestim
+1 6       400 0.615     0.385
+2 1       400 0.645     0.355
+
+λ=1 is almost never rejected:
+```{r}
+res |> filter(lmodel=="estim") |>
+  # group_by(lambda, netT, topo, kernel) |>
+  group_by(lambda, netT) |>
+  summarize(
+    nreject=sum(LRT=="reject λ=1"),
+    naccept=sum(LRT=="λ=1 fits"),
+    ntotal=n()) |>
+  mutate(power = nreject/ntotal) |> print(n=32)
+```
+
+  lambda netT  nreject naccept ntotal power
+1    0   6           0     100    100  0   
+2    0   1           0     100    100  0   
+3    0.5 6           1      99    100  0.01
+4    0.5 1           0     100    100  0   
+5    1   6           0     100    100  0   
+6    1   1           0     100    100  0   
+7    2   6           2      98    100  0.02
+8    2   1           1      99    100  0.01

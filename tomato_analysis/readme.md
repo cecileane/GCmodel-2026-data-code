@@ -27,7 +27,8 @@ Only one population is kept per species.
 Models are fitted using phylolm.
 
 Outputs: 
-  * results/tomato_tree_plot.pdf         : plot of the tree and data (Fig. 7)
-  * results/phylolm_wholetree_withrep.csv: table with results from the analyses
-  * results/tomato_wAIC.pdf              : plot of wAIC weights for all models (Fig. 9)
-  * results/tomato_variances.pdf         : plot of estimated evolutionary and within population variances for all models (Fig. 10)
+  * results/tomato_tree_plot.pdf             : plot of the tree and data (Fig. 7)
+  * results/phylolm_wholetree_withrep.csv    : table with results from the analyses
+  * results/tomato_wAIC.pdf                  : plot of wAIC weights for all models (Fig. 9)
+  * results/tomato_variances.pdf             : plot of estimated evolutionary and within population variances for all models (Fig. 10)
+  * ../simulations/tomato_tree_trim_coal.phy : trimmed tree used in the analyses and in `../simulations/accuracy_GC_simulate_tomato.jl`

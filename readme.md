@@ -1,6 +1,6 @@
 Code to reproduce simulations and data analysis in
 "Trait evolution with incomplete lineage sorting and gene ﬂow: the Gaussian Coalescent model"
-(Ané & Bastide, 2026)
+[(Ané & Bastide, 2026)](https://doi.org/10.64898/2026.03.10.710880)
 
 Depends on implementations of the GC model in
 - the R package [phylolm](https://github.com/lamho86/phylolm) v2.7.0
@@ -25,6 +25,12 @@ Each folder has a separate `readme.md` for more details.
     to create the input network `popnet_17taxa.nwk` (cleaning that from Teo et al. 2023).
     This script also creates the 45-population tree `poptre_45taxa.nwk`,
     also not needed to reproduce the simulation results.
+  + `accuracy_GC_simulate_tomato.jl` and `simulation_figures.qmd`: 
+    julia and R code to perform the same simulations on the tomato tree.
+    Loads `compoundpoisson.jl` and `tomato_tree_trim_coal.phy`.
+    The phylogeny is formatted and saved in script 
+    `tomato_analysis/tomato_analysis.R` (see below).
+    Reproduce Figures S7-9.
 
 - `tomato_analysis/` for the analysis of floral traits in wild tomatoes:
   + input tree and trait data in `tomato_tree.phy` and `flower_morphometrics2.csv`

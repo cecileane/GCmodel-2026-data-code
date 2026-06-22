@@ -50,3 +50,17 @@ loads `compoundpoisson.jl` for compound Poisson simulation.
 
 see `simulation_figures.qmd`. needs `accuracy_GC_results.csv`,
 which is created by `accuracy_GC_simulate.jl`.
+
+## simulations on the tomato tree
+
+We use the same simulation model and setup on the tomato tree with `ni = 3`.
+
+- simulation and analysis: `accuracy_GC_simulate_tomato.jl`
+  + needs `tomato_tree_trim_coal.phy` as input for the tomato tree
+    this tree is obtained from the full `tomato_analysis/tomato_tree.phy`
+    by pruning and re-scaling it to coalescent units in `tomato_analysis/tomato_analysis.R`
+  + loads `compoundpoisson.jl` for compound Poisson simulation
+
+- vizualization: `simulation_figures_tomato.qmd`
+  + needs `accuracy_GC_results_tomato.csv`,
+    which is created by `accuracy_GC_simulate.jl`

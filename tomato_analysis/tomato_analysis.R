@@ -70,6 +70,8 @@ tomato_tree_trim_rep <- add.individuals(tomato_tree_trim, tomato_traits_trim, sp
 plot(tomato_tree_trim_rep)
 summary(factor(tomato_traits_trim$sp_accession))
 
+write.tree(tomato_tree_trim, here("simulations", "tomato_tree_trim_coal.phy"))
+
 ################################################################################
 ## Plot data
 
@@ -194,8 +196,7 @@ res$isbestaic <- res$aic == tapply(res$aic, res$trait, min)[res$trait]
 write.csv(res, file.path(result_dir, "phylolm_wholetree_withrep.csv"))
 
 
-res$method <- factor(res$method, levels = c("GC 1", "GC 0", "GC", "GC 1 wsp", "GC 0 wsp", "GC wsp", "BM wsp"))
-levels(res$method) <- c("GC \u03bb=1", "GC \u03bb=0", "GC", "BM wsp", "GC \u03bb=1 wsp", "GC \u03bb=0 wsp", "GC wsp")
+res$method <- factor(res$method, levels = c("GC 1", "GC 0", "GC", "BM wsp", "GC 1 wsp", "GC 0 wsp", "GC wsp"))
 res$trait <- factor(res$trait, levels = traitnames)
 levels(res$trait) <- c("corolla diameter", "anther length", "stigma length")
 res$measurement_error <- factor(res$measurement_error, levels = c(FALSE, TRUE))

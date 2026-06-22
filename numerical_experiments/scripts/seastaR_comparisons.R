@@ -176,7 +176,7 @@ p1 <-
     begin = 0.2, end = 0.8, option = "B",
     guide = guide_legend(override.aes=list(size=2), title="n taxa", order=1)) +
   ylab("variance") +
-  xlab("clade height (t) / root height (T)") +
+  xlab("t/T: relative internal edge length") +
   scale_x_continuous(breaks = c(0,.5,1), labels=c("0","0.5","1"),
                      minor_breaks=seq(0,1,0.1)) +
   theme_bw() +
@@ -431,14 +431,14 @@ p <- ggplot(
     linetype = "solid",
     color = "black", linewidth=0.4) +
   geom_line(
-    data = subset(all_var, tip %in% c("AB", "CD")),
+    data = subset(all_var, tip %in% c("AB", "CD") & method %in% c("Cstar"))),
     aes(group = interaction(method, n)),
     linetype = 6, linewidth=0.8) +
   scale_color_viridis_d(
     begin = 0.2, end = 0.8, option = "B",
     guide = guide_legend(override.aes=list(size=2), title="n taxa", order=1)) +
   ylab("covariance") +
-  xlab("clade height (t) / root height (T)") +
+  xlab("t/T: relative internal edge length") +
   scale_x_continuous(breaks = c(0,.5,.9), labels=c("0","0.5","0.9"),
                      minor_breaks=seq(0,0.9,0.1), limits=c(0,0.9)) +
   scale_y_continuous(expand=expansion(mult = c(0.025,.05)),
