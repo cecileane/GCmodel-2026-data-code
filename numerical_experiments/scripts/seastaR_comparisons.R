@@ -46,7 +46,7 @@ vcv_gc <- function(tree, lambda) {
 }
 
 ################################################################################
-## Nested caterpillar tree
+## Example 1: nested caterpillar tree - three tips
 # To fine-tune the figure without re-running calculations:
 # 1. adjust `run_date` above, on/near line 17
 # 2. skip the code until the "Plot the (co)variances" section
@@ -75,7 +75,7 @@ get_nested_ladder_tree <- function(n, t, Ttot) {
   tree_ladder$edge.length[2] <- t
   tree_ladder$edge.length[1] <- Ttot
   if (n > 3) {
-    tree_ladder$tip.label <- c("C", paste0("B'", seq_len(n-3)), "B", "A")
+    tree_ladder$tip.label <- c("C", paste0("B2", seq_len(n-3)), "B", "A")
   } else {
     tree_ladder$tip.label <- c("C", "B", "A")
   }
@@ -102,15 +102,17 @@ edgelabels(text = "t", edge = 2)
 #'
 get_var_covar <- function(n, t, Ttot, lambda) {
   tree_ladder <- get_nested_ladder_tree(n, t, Ttot)
-  Ctree <- vcv(tree_ladder)
-  Cstar <- seastaR::get_full_matrix(tree_ladder)
-  Cils <- vcv_gc(tree_ladder, lambda)
+  write.tree(tree_ladder, file.path(result_dir_date, "trees", paste0("triplet_tree_n_", n, "_t_", sprintf("%.1f", t), "_Ttot_", Ttot, ".tree")))
+  time_tree <- system.time(Ctree <- vcv(tree_ladder))
+  time_star <- system.time(Cstar <- seastaR::get_full_matrix(tree_ladder))
+  time_ils <- system.time(Cils <- vcv_gc(tree_ladder, lambda))
   res <- data.frame(n = n, t = t, Ttot = Ttot, lambda = lambda,
                     var = c(Ctree[1, 1], Ctree[n, n], Ctree[1, n],
                             Cstar[1, 1], Cstar[n, n], Cstar[1, n],
                             Cils[1, 1], Cils[n, n], Cils[1, n]),
                     tip = rep(c("C", "A", "AC"), 3),
-                    method = rep(c("Ctree", "Cstar", "Cils"), each = 3))
+                    method = rep(c("Ctree", "Cstar", "Cils"), each = 3),
+                    time = rep(c(time_tree[1], time_star[1], time_ils[1]), each = 3))
   return(res)
 }
 
@@ -286,8 +288,153 @@ ggsave(filename = file.path(result_dir_date, "triplet_caterpillar_lambda.pdf"),
        height = columnwidth,
        unit = "in")
 
+## Sample gene trees using PhylCoalSimulation
+# TO BE RUN BEFORE: lines 28-37 of julia script
+# "numerical_experiments/scripts/seastaR_comparisons_sample_gene_trees.jl"
+# /!\ the julia script needs to have matching dates for file name consistency
+
+## Compute covariances using seastaR::trees_to_vcv
+get_var_covar_sample <- function(n, t, Ttot, lambda) {
+  ## check that the file exists
+  if (!file.exists(file.path(result_dir_date, "trees", paste0("triplet_gene_trees_n_", n, "_t_", sprintf("%.1f", t), "_Ttot_", Ttot, ".tree")))) {
+    stop("The gene trees file does could not be found. Please run julia script 'numerical_experiments/scripts/seastaR_comparisons_sample_gene_trees.jl' to simulate gene trees.")
+  }
+  ## read sample gene trees
+  genetree_list <- read.tree(file = file.path(result_dir_date, "trees", paste0("triplet_gene_trees_n_", n, "_t_", sprintf("%.1f", t), "_Ttot_", Ttot, ".tree")))
+  ## gene trees frequencies
+  class(genetree_list) <- "list"
+  ntrees <- length(genetree_list)
+  genetree_list[[ntrees + 1]] <- rep(1 / ntrees, ntrees)
+  ## vcv
+  time_sample <- system.time(Cstarsample <- seastaR::trees_to_vcv(genetree_list))
+  res <- data.frame(n = n, t = t, Ttot = Ttot, lambda = 1,
+                    var = c(Cstarsample[1, 1], Cstarsample[n, n], Cstarsample[1, n]),
+                    tip = c("C", "A", "AC"),
+                    method = rep(c("Cstarsample"), each = 3),
+                    time = rep(c(time_sample[1]), each = 3))
+  return(res)
+}
+
+all_var_sample <- NULL
+for (Ttot in Ttot_all) {
+  for (n in n_all) {
+    all_var_tmp <- lapply(t_all, function(tt) get_var_covar_sample(n = n, t = tt * Ttot, Ttot = Ttot, lambda = 1))
+    all_var_tmp <- do.call(rbind, all_var_tmp)
+    all_var_sample <- rbind(all_var_sample, all_var_tmp)
+  }
+}
+
+all_var_all_lambda <- rbind(all_var_all_lambda, all_var_sample)
+write.table(all_var_all_lambda, file = file.path(result_dir_date, "all_var_A_C_AC.csv"))
+
+## Plot results
+
+if(run_date != run_date_today){ # then load prior computations
+  csv_filename = file.path(result_dir_date, "all_var_A_C_AC.csv")
+  if(file.exists(csv_filename)){
+    all_var_all_lambda <- read.table(file = csv_filename)
+    cat("loaded prior data in 'all_var_all_lambda':",
+        nrow(all_var_all_lambda), "rows,", ncol(all_var_all_lambda), "columns\n")
+  } else {
+    cat("no loading of prior data: no file\n", csv_filename, "\n", sep="")
+  }
+}
+
+all_var <- subset(all_var_all_lambda, lambda == 1)
+## plot
+p1 <-
+  ggplot(
+    subset(all_var, tip %in% c("A", "C") & method %in% c("Cstar", "Cstarsample")),
+    # method %in% c("Cils", "Cstar")
+    aes(x = t / Ttot, y = var, color = as.factor(n), linetype = method)) +
+  facet_grid(
+    rows = vars(factor(Ttot, c(30, 3))), cols = vars(tip),
+    scales = "free",
+    labeller = labeller(.rows=function(x){paste("T =",x)})) +
+  geom_line(
+    data = subset(all_var, tip %in% c("A", "C") & method %in% c("Cils")),
+    aes(group = interaction(method, n)),
+    linetype = "solid",
+    color = "black", linewidth=0.4) +
+  geom_line(
+    data = subset(all_var, tip %in% c("A", "C") & method %in% c("Ctree")),
+    aes(group = interaction(method, n)),
+    linetype = "solid", # "dotted"
+    color = gray(0.5), linewidth=0.4) +
+  geom_line(aes(group = interaction(method, n))
+            # linetype = 6,
+            # linewidth=0.8
+  ) +
+  scale_color_viridis_d(
+    begin = 0.2, end = 0.8, option = "B",
+    guide = guide_legend(override.aes=list(size=2), title="n taxa", order=1)) +
+  scale_linetype_manual(
+    values = c(6, 1),
+    breaks = c("Cstar", "Cstarsample"),
+    labels = c("get_full_matrix", "tree_to_vcv"),
+    name = "seastaR") +
+  ylab("variance") +
+  xlab("t/T: relative internal edge length") +
+  scale_x_continuous(breaks = c(0,.5,1), labels=c("0","0.5","1"),
+                     minor_breaks=seq(0,1,0.1)) +
+  # scale_y_continuous(minor_breaks=NULL) +
+  theme_bw() +
+  theme(strip.text.y = element_blank(), # remove facet label: same as in p2
+        panel.grid.major = element_line(linewidth=0.1 , color=grey(0.9)),
+        panel.grid.minor = element_line(linewidth=0.05, color=grey(0.9)))
+
+p2 <- ggplot(
+  subset(all_var, tip %in% c("AC") & method %in% c("Cstar", "Cstarsample")),
+  aes(x = t / Ttot, y = var, color = as.factor(n), linetype = method)) +
+  facet_grid(
+    rows = vars(factor(Ttot, c(30, 3))), cols = vars(tip),
+    scales = "free",
+    labeller = labeller(.rows=function(x){paste("T =",x)})) +
+  geom_line(
+    data = subset(all_var, tip %in% c("AC") & method %in% c("Cils")),
+    aes(group = interaction(method, n)),
+    linetype = "solid",
+    color = "black", linewidth=0.4) +
+  geom_line(
+    data = subset(all_var, tip %in% c("AC") & method %in% c("Ctree")),
+    aes(group = interaction(method, n)),
+    linetype = "solid", # "dotted"
+    color = gray(0.5), linewidth=0.4) +
+  geom_line(aes(group = interaction(method, n))
+            # linetype = 6,
+            # linewidth=0.8
+  ) +
+  scale_color_viridis_d(
+    begin = 0.2, end = 0.8, option = "B",
+    guide = guide_legend(override.aes=list(size=2), title="n taxa", order=1)) +
+  scale_linetype_manual(values = c(6, 1), breaks = c("Cstar", "Cstarsample"), labels = c("theoretical", "samples"), name = "seastaR") +
+  ylab("covariance") +
+  xlab("t/T") +
+  scale_x_continuous(breaks = c(0,.5,1), labels=c("0","0.5","1"),
+                     minor_breaks=seq(0,1,0.1)) +
+  theme_bw() +
+  theme(
+    panel.grid.major = element_line(linewidth=0.1 , color=grey(0.9)),
+    panel.grid.minor = element_line(linewidth=0.05, color=grey(0.9)))
+
+legend <- get_legend( # create some space to the left of the legend
+  p1 + theme(legend.box.margin = margin(0, 0, 0, 12))
+)
+p <- cowplot::plot_grid(p1 + theme(legend.position="none"),
+                        p2 + theme(legend.position="none"),
+                        legend,
+                        nrow = 1,
+                        rel_widths = c(1.7, 1, 0.7))
+p
+
+ggsave(filename = file.path(result_dir_date, "triplet_caterpillar_comparisons_sample.pdf"),
+       plot = p,
+       width = twocolumnwidth,
+       height = columnwidth,
+       unit = "in")
+
 ################################################################################
-## mixed setting with ladder - four tips
+## Example 2: mixed setting with ladder - four tips
 # To fine-tune the figure without re-running calculations:
 # 1. adjust `run_date` above, on/near line 14
 # 2. skip the code until the "Plot the covariances" section
@@ -319,7 +466,7 @@ get_nested_ladder_tree <- function(n, t, Ttot) {
     tree_ladder$edge.length[2*nclade-2] <- Ttot / 10
     tree_ladder$edge.length[2] <- t
     tree_ladder$edge.length[1] <- Ttot
-    tree_ladder$tip.label <- c("C", paste0("B'", seq_len(nclade-3)), "B", "A")
+    tree_ladder$tip.label <- c("C", paste0("B2", seq_len(nclade-3)), "B", "A")
   } else {
     tree_ladder$edge.length[4] <- Ttot / 10
     tree_ladder$edge.length[3] <- Ttot / 10
@@ -354,16 +501,18 @@ edgelabels(text = "t", edge = 4)
 #'
 get_var_covar <- function(n, t, Ttot, lambda) {
   tree_ladder <- get_nested_ladder_tree(n, t, Ttot)
-  Ctree <- vcv(tree_ladder)
-  Cstar <- seastaR::get_full_matrix(tree_ladder)
-  Cils <- vcv_gc(tree_ladder, lambda)
+  write.tree(tree_ladder, file.path(result_dir_date, "trees", paste0("quadruplet_tree_n_", n, "_t_", sprintf("%.1f", t), "_Ttot_", Ttot, ".tree")))
+  time_tree <- system.time(Ctree <- vcv(tree_ladder))
+  time_star <- system.time(Cstar <- seastaR::get_full_matrix(tree_ladder))
+  time_ils <- system.time(Cils <- vcv_gc(tree_ladder, lambda))
   res <- data.frame(
     n = n, t = t, Ttot = Ttot, lambda = lambda,
     var = c(Ctree[1, 1], Ctree[n, n], Ctree[1, n], Ctree[n-1, n], Ctree[1, 2],
             Cstar[1, 1], Cstar[n, n], Cstar[1, n], Cstar[n-1, n], Cstar[1, 2],
             Cils[1, 1], Cils[n, n], Cils[1, n], Cils[n-1, n], Cils[1, 2]),
     tip = rep(c("C", "A", "AC", "AB", "CD"), 3),
-    method = rep(c("Ctree", "Cstar", "Cils"), each = 5))
+    method = rep(c("Ctree", "Cstar", "Cils"), each = 5),
+    time = rep(c(time_tree[3], time_star[3], time_ils[3]), each = 5))
   return(res)
 }
 
@@ -490,3 +639,181 @@ ggsave(filename = file.path(result_dir_date, "quadruplet_caterpillar_lambda.pdf"
        width = twocolumnwidth,
        height = columnwidth,
        unit = "in")
+
+
+## Sample gene trees using PhylCoalSimulation
+# TO BE RUN BEFORE: lines 44-53 of julia script
+# "numerical_experiments/scripts/seastaR_comparisons_sample_gene_trees.jl"
+# /!\ the julia script needs to have matching dates for file name consistency
+
+## Compute covariances using seastaR::trees_to_vcv
+get_var_covar_sample <- function(n, t, Ttot, lambda) {
+  ## check that the file exists
+  if (!file.exists(file.path(result_dir_date, "trees", paste0("quadruplet_gene_trees_n_", n, "_t_", sprintf("%.1f", t), "_Ttot_", Ttot, ".tree")))) {
+    stop("The gene trees file does could not be found. Please run julia script 'numerical_experiments/scripts/seastaR_comparisons_sample_gene_trees.jl' to simulate gene trees.")
+  }
+  ## read sample gene trees
+  genetree_list <- read.tree(file = file.path(result_dir_date, "trees", paste0("quadruplet_gene_trees_n_", n, "_t_", sprintf("%.1f", t), "_Ttot_", Ttot, ".tree")))
+  ## gene trees frequencies
+  class(genetree_list) <- "list"
+  ntrees <- length(genetree_list)
+  genetree_list[[ntrees + 1]] <- rep(1 / ntrees, ntrees)
+  ## vcv
+  time_sample <- system.time(Cstarsample <- seastaR::trees_to_vcv(genetree_list))
+  res <- data.frame(n = n, t = t, Ttot = Ttot, lambda = lambda,
+                    var = c(Cstarsample[1, 1], Cstarsample[n, n], Cstarsample[1, n], Cstarsample[n-1, n], Cstarsample[1, 2]),
+                    tip = rep(c("C", "A", "AC", "AB", "CD"), 3),
+                    method = rep(c("Cstarsample"), each = 5),
+                    time = rep(c(time_sample[3]), each = 5))
+  return(res)
+}
+
+all_var_sample <- NULL
+for (Ttot in Ttot_all) {
+  for (n in n_all) {
+    all_var_tmp <- lapply(t_all, function(tt) get_var_covar_sample(n = n, t = tt * Ttot, Ttot = Ttot, lambda = 1))
+    all_var_tmp <- do.call(rbind, all_var_tmp)
+    all_var_sample <- rbind(all_var_sample, all_var_tmp)
+  }
+}
+
+all_var_all_lambda <- rbind(all_var_all_lambda, all_var_sample)
+write.table(all_var_all_lambda, file = file.path(result_dir_date, "all_var_A_C_AC_AB_CD.csv"))
+
+## Plot results
+
+if(run_date != run_date_today){ # then load prior computations
+  csv_filename = file.path(result_dir_date, "all_var_A_C_AC_AB_CD.csv")
+  # earlier: here("numerical_experiments","results","2024-07-09","all_var_ABC.csv")
+  if(file.exists(csv_filename)){
+    all_var_all_lambda <- read.table(file = csv_filename)
+    cat("loaded prior data in 'all_var':",
+        nrow(all_var_all_lambda), "rows,", ncol(all_var_all_lambda), "columns\n")
+  } else {
+    cat("no loading of prior data: no file\n", csv_filename, "\n", sep="")
+  }
+}
+
+all_var <- subset(all_var_all_lambda, lambda == 1)
+# customize tickmarks to make them similar for T=3 versus 30
+cov_grid.major.breaks = c(1,2,2.7, 10,20,27) # for T=3 then T=30
+# expand limits less than default: to avoid 2.7 on the plot for T=30.
+cov_grid.minor.breaks = c(.5,1.5,2.5, 5,15,25) # otherwise halfway between major
+
+p <- ggplot(
+  subset(all_var, tip %in% c("AB", "CD") & method %in% c("Cstar", "Cstarsample")),
+  aes(x = t / Ttot, y = var, color = as.factor(n), linetype = method)) +
+  facet_grid(
+    rows = vars(factor(Ttot, c(30, 3))), cols = vars(tip),
+    scales = "free",
+    labeller = labeller(.rows=function(x){paste("T =",x)})) +
+  geom_line(
+    data = subset(all_var, tip %in% c("AB", "CD") & method %in% c("Ctree")),
+    aes(group = interaction(method, n)),
+    linetype = "solid",
+    color = gray(0.5), linewidth=0.4) +
+  geom_line(
+    data = subset(all_var, tip %in% c("AB", "CD") & method %in% c("Cils")),
+    aes(group = interaction(method, n)),
+    linetype = "solid",
+    color = "black", linewidth=0.4) +
+  geom_line(
+    # data = subset(all_var, tip %in% c("AB", "CD") & method %in% c("Cstar")),
+    aes(group = interaction(method, n)),
+    # linetype = 6,
+    # linewidth=0.8
+  ) +
+  scale_linetype_manual(
+    values = c(6, 1),
+    breaks = c("Cstar", "Cstarsample"),
+    labels = c("get_full_matrix", "tree_to_vcv"),
+    name = "seastaR") +
+  scale_color_viridis_d( # fixit
+    begin = 0.2, end = 0.8, option = "B",
+    guide = guide_legend(override.aes=list(size=2), title="n taxa", order=1)) +
+  ylab("covariance") +
+  xlab("t/T: relative internal edge length") +
+  scale_x_continuous(breaks = c(0,.5,.9), labels=c("0","0.5","0.9"),
+                     minor_breaks=seq(0,0.9,0.1), limits=c(0,0.9)) +
+  scale_y_continuous(expand=expansion(mult = c(0.025,.05)),
+                     breaks = cov_grid.major.breaks,
+                     minor_breaks=cov_grid.minor.breaks) +
+  theme_bw() + theme(
+    panel.grid.major = element_line(linewidth=0.1 , color=grey(0.9)),
+    panel.grid.minor = element_line(linewidth=0.05, color=grey(0.9)))
+p
+
+ggsave(filename = file.path(result_dir_date, "quadruplet_caterpillar_comparisons_sample.pdf"),
+       plot = p,
+       width = twocolumnwidth,
+       height = columnwidth,
+       unit = "in")
+
+################################################################################
+## TIMING summary for examples 1 and 2 combined
+################################################################################
+
+## load example 1
+csv_filename = file.path(result_dir_date, "all_var_A_C_AC.csv")
+if(file.exists(csv_filename)){
+  all_var_all_lambda <- read.table(file = csv_filename)
+  cat("loaded prior data in 'all_var':",
+      nrow(all_var_all_lambda), "rows,", ncol(all_var_all_lambda), "columns\n")
+} else {
+  cat("no loading of prior data: no file\n", csv_filename, "\n", sep="")
+}
+if ("lambda" %in% colnames(all_var_all_lambda)){
+  all_var_triplet <- subset(all_var_all_lambda, lambda == 1)
+} else {
+  all_var_triplet <- all_var_all_lambda
+}
+
+## load example 2
+csv_filename = file.path(result_dir_date, "all_var_A_C_AC_AB_CD.csv")
+if(file.exists(csv_filename)){
+  all_var_all_lambda <- read.table(file = csv_filename)
+  cat("loaded prior data in 'all_var':",
+      nrow(all_var_all_lambda), "rows,", ncol(all_var_all_lambda), "columns\n")
+} else {
+  cat("no loading of prior data: no file\n", csv_filename, "\n", sep="")
+}
+all_var_quad <- subset(all_var_all_lambda, lambda == 1)
+
+## merge
+all_var_time <- rbind(all_var_triplet, all_var_quad)
+
+## plot
+all_var_time$time[all_var_time$time == 0] <- 0.001
+p <- ggplot(
+  all_var_time,
+  aes(x = n, y = time, color = method)) +
+  # facet_grid(
+  #   cols = vars(factor(Ttot, c(30, 3))),
+  #   scales = "free",
+  #   labeller = labeller(.cols=function(x){paste("T =",x)})) +
+  stat_summary(fun = "mean", geom = "line") +
+  scale_color_manual(
+    values = c("#000000", "#E69F00", "#56B4E9", "#009E73"),
+    breaks = c("Ctree", "Cils", "Cstar", "Cstarsample"),
+    labels = c("ape::vcv", "phylolm GC", "get_full_matrix", "tree_to_vcv"),
+    name = "method") +
+  ylab("mean time (s, log scale)") + 
+  scale_y_log10() +
+  scale_x_continuous(breaks = c(3, 4, 10, 20)) +
+  theme_bw()
+p
+
+ggsave(filename = file.path(result_dir_date, "all_caterpillar_comparisons_time.pdf"),
+       plot = p,
+       width = twocolumnwidth,
+       height = columnwidth,
+       unit = "in")
+
+## print mean computation times
+library(dplyr)
+all_var_time |> 
+  group_by(n, method) |>
+  summarize(
+    mean_time = mean(time),
+    .groups = "drop"
+  )

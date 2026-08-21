@@ -11,7 +11,9 @@ Here is an overview of the folders in this repository.
 Each folder has a separate `readme.md` for more details.
 
 - `numerical_experiments/scripts/`
-  + `seastaR_comparisons.R` to reproduce Figures 3 and 4
+  + `seastaR_comparisons.R` to reproduce Figures 3 and 4 and S3-S5
+  + `seastaR_comparisons_sample_gene_trees.jl` to simulate gene trees under the
+     network multispecies coalescent, used by `seastaR_comparisons.R`
   + `jointdistribution_nongaussian.jl` to reproduce Figure S2.
 
 - `simulations/`
@@ -19,7 +21,7 @@ Each folder has a separate `readme.md` for more details.
     `compoundpoisson.jl` (for the mutational process) and loading the
     phylogenetic network `popnet_17taxa.nwk` with 17 populations.
   + `simulation_figures.qmd`: R code to visualize the simulation results, and
-    reproduce Figures 5-6 and S3-S6.
+    reproduce Figures 5-6 and S6-S9.
     This code uses the output csv file created by `accuracy_GC_simulate.jl`.
   + *not* needed to reproduce the simulations: `population_phylogenies.jl`
     to create the input network `popnet_17taxa.nwk` (cleaning that from Teo et al. 2023).
@@ -30,7 +32,7 @@ Each folder has a separate `readme.md` for more details.
     Loads `compoundpoisson.jl` and `tomato_tree_trim_coal.phy`.
     The phylogeny is formatted and saved in script 
     `tomato_analysis/tomato_analysis.R` (see below).
-    Reproduce Figures S7-9.
+    Reproduce Figures S10-12.
 
 - `tomato_analysis/` for the analysis of floral traits in wild tomatoes:
   + input tree and trait data in `tomato_tree.phy` and `flower_morphometrics2.csv`
